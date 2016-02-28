@@ -5,18 +5,81 @@ date: "February 28, 2016"
 output: html_document
 ---
 
-This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+Personal fitness tracking devices from brands such as Fitbit, Jawbone, or Nike  quantify how much of a particular activity the device user performs. But they rarely quantify how well the user performs an activity. 
 
-When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+The aim of this machine learning project is to analyze personal fitness tracking data to determine the quality, rather than simply the quantity, of activity. Activity trackers use miniature accelerometers to track motion in three dimensions. 
 
-```{r}
-summary(cars)
+The dataset includes data from accelerometers on the belt, forearm, and dumbbell of six participants.  Participants were asked to perform dumbbell lifts correctly and incorrectly in five different ways.  The analysis examines the data to develop a predictive model, and via that model distinguish correct form from incorrect form.
+
+## Approach
+
+Two datasets are provided for this project, a training and a testing set.  The approach used in this is analysis is to partition the training set, with 75% of the training set used for analysis and 25% used for testing of the derived model.  A second dataset is used independently to validate the predictive model.
+
+Using the predictive model, the testing dataset will be analyzed to segregate good form from bad in the dumbbell lift activity.  The _classe_ variable (column 160) from dataset is used to identify whether an activity was performed correctly or not, and is used as the outcome variable to develop the training model. 
+
+
+```{r message=FALSE}
+# libraries used
+library(caret)
+library(Hmisc)
+library(rattle)
+library(rpart)
+
+# read in the raw TESTING data, to be subdivided into two datasets for developing the model.
+rawData <- read.csv("pml-training.csv",header=TRUE, sep=",")
+rawTesting <- read.csv("pml-testing.csv",header=TRUE,sep=",")
+# rawData  <- read.csv("https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv",header=TRUE,sep=",")
+
+partitions <- createDataPartition(y=rawData$classe,p=.75,list=FALSE)
+
+training  <- rawData[partitions,]
+testing   <- rawData[-partitions,]
+
+```
+## Choosing Data
+
+The training dataset has 160 variables, 159 predictor candidate variables and one outcome variable, _classe_.  
+
+Some of the predictor candidates are clearly not useful for prediction, for example the _X_ variable, essentially a row number, and the _user\_name_ variable.  Neither of these are relevant to whether the activity was 
+
+It would be useful to reduce the number of variables further.  Using the nearZeroVar R function, I've identified all variables that are near zero, and removed those from the training set.  Further efforts to reduce the number of predictor variables could be employed to simplify the prediction model.
+
+
+```{r message=FALSE}
+# Remove the X variable
+training <- training[,-match("X",names(training))]
+training <- training[,-match("user_name",names(training))]
+
+# remove variables that have near-zero variablity. This reduces the number of predictor candidate variables to 97.
+nsvTrain <- nearZeroVar(training,saveMetrics=FALSE)
+training <- training[,-nsvTrain]
+
 ```
 
-You can also embed plots, for example:
+## Model Fitting & Prediction
 
-```{r, echo=FALSE}
-plot(cars)
+A model based on the simplified dataset can be performed using tree partitioning. This is a relatively quick process, compared to using random forests, for example.  A plot of the decision tree is shown.
+
+A pre
+
+
+```{r message=FALSE}
+
+# training using tree based partiion, to create a prediction model
+modFitRP <- train(classe ~ .,data=training,method="rpart")
+
+# plotting decision tree based on the model
+fancyRpartPlot(modFitRP$finalModel)
+
+# create a matrix of predictions for the testing data based on the decision tree.
+predRP <- predict(modFitRP,newdata=testing)
+
+confusionMatrix(testing$classe,predRP)
+
+
 ```
 
-Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
+## Conclusion
+
+The process I've outlined is a first-pass at prediction, a starting point for further exploration.  The predictions based on this partition tree model are not particularly accurate, and the use of random forest prediction might be preferable.  However, given time constraint for the class it is simply the best I can do with limited time.
+
