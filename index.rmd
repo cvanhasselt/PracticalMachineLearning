@@ -22,13 +22,10 @@ Using the predictive model, the testing dataset will be analyzed to segregate go
 # libraries used
 library(caret)
 library(Hmisc)
-library(rattle)
-library(rpart)
 
-# read in the raw TESTING data, to be subdivided into two datasets for developing the model.
-rawData <- read.csv("pml-training.csv",header=TRUE, sep=",")
-rawTesting <- read.csv("pml-testing.csv",header=TRUE,sep=",")
-# rawData  <- read.csv("https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv",header=TRUE,sep=",")
+# read in the raw TRAINING data, to be subdivided into two datasets for developing the model.
+rawData  <- read.csv("http://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv",header=TRUE,sep=",")
+rawTesting  <- read.csv("http://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv",header=TRUE,sep=",")
 
 partitions <- createDataPartition(y=rawData$classe,p=.75,list=FALSE)
 
@@ -46,7 +43,7 @@ It would be useful to reduce the number of variables further.  Using the nearZer
 
 
 ```{r message=FALSE}
-# Remove the X variable
+# Remove the X and user_name variables
 training <- training[,-match("X",names(training))]
 training <- training[,-match("user_name",names(training))]
 
@@ -54,32 +51,39 @@ training <- training[,-match("user_name",names(training))]
 nsvTrain <- nearZeroVar(training,saveMetrics=FALSE)
 training <- training[,-nsvTrain]
 
+# Repeat same process for testing
+testing <- testing[,-match("X",names(testing))]
+testing <- testing[,-match("user_name",names(testing))]
+
+# remove variables that have near-zero variablity. This reduces the number of predictor candidate variables to 97.
+testing <- testing[,-nsvTrain]
+
 ```
 
 ## Model Fitting & Prediction
 
-A model based on the simplified dataset can be performed using tree partitioning. This is a relatively quick process, compared to using random forests, for example.  A plot of the decision tree is shown.
-
-A pre
+A model based on the simplified dataset can be performed using random forest training. 
 
 
-```{r message=FALSE}
+```{r message=FALSE,cache=TRUE}
 
-# training using tree based partiion, to create a prediction model
-modFitRP <- train(classe ~ .,data=training,method="rpart")
+# training using random forests to create a prediction model
+modFitRF <- train(classe ~ .,data=training,method="rf")
 
-# plotting decision tree based on the model
-fancyRpartPlot(modFitRP$finalModel)
+modFitRF$results
 
-# create a matrix of predictions for the testing data based on the decision tree.
-predRP <- predict(modFitRP,newdata=testing)
+# create a matrix of predictions for the testing data based random forest model.
+predRF <- predict(modFitRF,newdata=testing)
 
-confusionMatrix(testing$classe,predRP)
 
 
 ```
 
+At this point, I was very confused as to how to proceed further.  When attempting to have R construct a comparison table between the prediction and the actual values in the testing set, I was unable to 
+get a comparison to validate that my prediction model was accurate. I believe this is because of the large number of "missed" predictions because of NA values, but am not sure how to proceed.
+
 ## Conclusion
 
-The process I've outlined is a first-pass at prediction, a starting point for further exploration.  The predictions based on this partition tree model are not particularly accurate, and the use of random forest prediction might be preferable.  However, given time constraint for the class it is simply the best I can do with limited time.
+
+The process I've outlined is a first-pass at prediction, a starting point for further exploration.  Given the time constraint for the class it is simply the best I can do with limited time.
 
