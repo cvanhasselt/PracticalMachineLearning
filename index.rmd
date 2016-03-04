@@ -13,12 +13,12 @@ The dataset includes data from accelerometers on the belt, forearm, and dumbbell
 
 ## Approach
 
-Two datasets are provided for this project, a training and a testing set.  The approach used in this is analysis is to partition the training set, with 75% of the training set used for analysis and 25% used for testing of the derived model.  A second dataset is used independently to validate the predictive model.
+Two datasets are provided for this project, a training and a testing set.  The approach used in this is analysis is to partition the training set, with 75% of the training set used for analysis and 25% used for validation of the derived model.  A second independent dataset is used to test the predictive model.
 
-Using the predictive model, the testing dataset will be analyzed to segregate good form from bad in the dumbbell lift activity.  The _classe_ variable (column 160) from dataset is used to identify whether an activity was performed correctly or not, and is used as the outcome variable to develop the training model. 
+A second independent dataset is used to test the predictive model.The testing dataset will be analyzed to segregate good form from bad in the dumbbell lift activity.  The _classe_ variable (column 160) from dataset is used to identify whether an activity was performed correctly or not, and is used as the outcome variable to develop the training model.  
 
 
-```{r message=FALSE}
+```{r loadData, message=FALSE}
 # libraries used
 library(caret)
 library(Hmisc)
@@ -27,9 +27,10 @@ library(Hmisc)
 rawData  <- read.csv("http://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv",header=TRUE,sep=",")
 rawTesting  <- read.csv("http://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv",header=TRUE,sep=",")
 
+set.seed(201602)
 partitions <- createDataPartition(y=rawData$classe,p=.75,list=FALSE)
 
-training  <- rawData[partitions,]
+training_orig  <- rawData[partitions,]
 testing   <- rawData[-partitions,]
 
 ```
@@ -37,32 +38,68 @@ testing   <- rawData[-partitions,]
 
 The training dataset has 160 variables, 159 predictor candidate variables and one outcome variable, _classe_.  
 
-Some of the predictor candidates are clearly not useful for prediction, for example the _X_ variable, essentially a row number, and the _user\_name_ variable.  Neither of these are relevant to whether the activity was 
+Some of the predictor candidates are clearly not useful for prediction, for example the _X_ variable, essentially a row number, and the _user\_name_ variable.  Neither of these are relevant to whether the activity was performed correctly or not.  Timestamp variables are also removed.  Columns derived from other predictor variables, such as _avg\* and _stddev\* are also removed.
 
 It would be useful to reduce the number of variables further.  Using the nearZeroVar R function, I've identified all variables that are near zero, and removed those from the training set.  Further efforts to reduce the number of predictor variables could be employed to simplify the prediction model.
 
 
-```{r message=FALSE}
-# Remove the X and user_name variables
+```{r selectData, message=FALSE}
+# Remove the X, user_name, timestamp*, stdev_*, avg_*, var_*, window*, max*, min*, skewness*, 
+# amplitude*, and kurtosis* predictor variables.  
+training <- training_orig
 training <- training[,-match("X",names(training))]
 training <- training[,-match("user_name",names(training))]
+training <- training[,-grep("^.+timestamp",names(training))]
+training <- training[,-grep("^stddev\\_.+",names(training))]
+training <- training[,-grep("^avg\\_.+",names(training))]
+training <- training[,-grep("^var\\_.+",names(training))]
+training <- training[,-grep("^kurtosis\\_.+",names(training))]
+training <- training[,-grep("^min\\_.+",names(training))]
+training <- training[,-grep("^max\\_.+",names(training))]
+training <- training[,-grep("^skewness\\_.+",names(training))]
+training <- training[,-grep("^amplitude\\_.+",names(training))]
+training <- training[,-grep("^.+window",names(training))]
 
-# remove variables that have near-zero variablity. This reduces the number of predictor candidate variables to 97.
-nsvTrain <- nearZeroVar(training,saveMetrics=FALSE)
-training <- training[,-nsvTrain]
+```
+With 53 variables, creating a feature plot to identify possiblly correlated 
+variables was near impossible.  As demonstated in the principal components 
+analysis, it would be useful to see if any variables are correlated.
 
-# Repeat same process for testing
-testing <- testing[,-match("X",names(testing))]
-testing <- testing[,-match("user_name",names(testing))]
 
-# remove variables that have near-zero variablity. This reduces the number of predictor candidate variables to 97.
-testing <- testing[,-nsvTrain]
+```{r correlation, message=FALSE}
+
+# identify correlations within the training set, leaving out the outcome variable.
+# choosing .9 as a high level of correlation.
+MX <- abs(cor(training[,-53]))
+diag(MX) <- 0 
+corVars <- which(MX > .9,arr.ind=TRUE)
+
+length(corVars)
+
+```
+With 44 closely related variables, even the simplified dataset retains a lot of 
+ambiguity.
+
+## Cross Validation & Model Fitting
+
+A model based on the simplified dataset can be performed using random forest training.  
+To train the model with cross validation, I will use the caret package, and 10-fold cross
+validation.
+
+```{r cv,message=FALSE}
+# setting up cross-validation
+trControl <- trainControl(method="cv",number=10)
+
+# generating model
+modelFitRF <- train(classe ~ .,data=training,trainControl=trControl,methiod="rf")
+
+predRF <- predict(modFitRF,newdata=testing)
 
 ```
 
 ## Model Fitting & Prediction
 
-A model based on the simplified dataset can be performed using random forest training. 
+ 
 
 
 ```{r message=FALSE,cache=TRUE}
