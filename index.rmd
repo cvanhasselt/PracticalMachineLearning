@@ -13,9 +13,10 @@ The dataset includes data from accelerometers on the belt, forearm, and dumbbell
 
 ## Approach
 
-Two datasets are provided for this project, a training and a testing set.  The approach used in this is analysis is to partition the training set, with 75% of the training set used for analysis and 25% used for validation of the derived model.  A second independent dataset is used to test the predictive model.
+Two datasets are provided for this project, a training and a testing set.  The approach used in this is analysis is to partition the training set, with 75% of the training set used for analysis and 25% used for validation of the derived model.  The two datasets are called _training_ and _testing_, respectively.  The _classe_ variable (column 160) from dataset is used to identify whether an activity was performed correctly.  It is used as the outcome variable to develop the training model.  
 
-A second independent dataset is used to test the predictive model.The testing dataset will be analyzed to segregate good form from bad in the dumbbell lift activity.  The _classe_ variable (column 160) from dataset is used to identify whether an activity was performed correctly or not, and is used as the outcome variable to develop the training model.  
+A second independent dataset, _rawTesting_, is loaded for blind testing of the predictive model.  The _rawTesting_ 
+dataset has no actual values for _classe_.
 
 
 ```{r loadData, message=FALSE}
@@ -27,23 +28,22 @@ library(Hmisc)
 rawData  <- read.csv("http://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv",header=TRUE,sep=",")
 rawTesting  <- read.csv("http://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv",header=TRUE,sep=",")
 
-set.seed(201602)
+
 partitions <- createDataPartition(y=rawData$classe,p=.75,list=FALSE)
 
 training_orig  <- rawData[partitions,]
 testing   <- rawData[-partitions,]
+
 
 ```
 ## Choosing Data
 
 The training dataset has 160 variables, 159 predictor candidate variables and one outcome variable, _classe_.  
 
-Some of the predictor candidates are clearly not useful for prediction, for example the _X_ variable, essentially a row number, and the _user\_name_ variable.  Neither of these are relevant to whether the activity was performed correctly or not.  Timestamp variables are also removed.  Columns derived from other predictor variables, such as _avg\* and _stddev\* are also removed.
-
-It would be useful to reduce the number of variables further.  Using the nearZeroVar R function, I've identified all variables that are near zero, and removed those from the training set.  Further efforts to reduce the number of predictor variables could be employed to simplify the prediction model.
+Some of the predictor candidates are clearly not useful for prediction, for example the _X_ variable, essentially a row number, and the _user\_name_ variable.  Neither of these are relevant to whether the activity was performed correctly or not.  Timestamp variables are also not relevant, nor are columns derived from other predictor variables, such as _avg\* and _stddev\*.  All of these variables were removed. Further efforts to reduce the number of predictor variables could be employed to simplify the prediction model.
 
 
-```{r selectData, message=FALSE}
+```{r Select Data, message=FALSE}
 # Remove the X, user_name, timestamp*, stdev_*, avg_*, var_*, window*, max*, min*, skewness*, 
 # amplitude*, and kurtosis* predictor variables.  
 training <- training_orig
@@ -62,17 +62,20 @@ training <- training[,-grep("^.+window",names(training))]
 
 ```
 With 53 variables, creating a feature plot to identify possiblly correlated 
-variables was near impossible.  As demonstated in the principal components 
-analysis, it would be useful to see if any variables are correlated.
+variables proved time consuming.  As demonstated in the principal components 
+analysis, it would be useful to see if any variables are correlated. However, 
+after identifying the number of closely related variables, it seems apparent
+that there are many correlated variables, making prediction difficult.
 
 
-```{r correlation, message=FALSE}
+```{r Correlation, message=FALSE}
 
 # identify correlations within the training set, leaving out the outcome variable.
 # choosing .9 as a high level of correlation.
-MX <- abs(cor(training[,-53]))
+MX <- abs(cor(training[,-grep("^classe",names(training))]))
 diag(MX) <- 0 
 corVars <- which(MX > .9,arr.ind=TRUE)
+
 
 length(corVars)
 
@@ -83,44 +86,62 @@ ambiguity.
 ## Cross Validation & Model Fitting
 
 A model based on the simplified dataset can be performed using random forest training.  
-To train the model with cross validation, I will use the caret package, and 10-fold cross
+To train the model with cross validation, I will use the caret package, and 5-fold cross
 validation.
 
-```{r cv,message=FALSE}
+```{r Cross Validation, message=FALSE, warning=TRUE}
 # setting up cross-validation
-trControl <- trainControl(method="cv",number=10)
+set.seed(54321)
+trControl <- trainControl(method="cv",number=5,allowParallel=TRUE,verboseIter=TRUE)
 
-# generating model
-modelFitRF <- train(classe ~ .,data=training,trainControl=trControl,methiod="rf")
+# generate model
+modelFitRF <- train(training$classe ~ .,method="rf",data=training,trainControl=trControl)
 
-predRF <- predict(modFitRF,newdata=testing)
+# display characteristics of the model
+modelFitRF
 
-```
-
-## Model Fitting & Prediction
-
- 
-
-
-```{r message=FALSE,cache=TRUE}
-
-# training using random forests to create a prediction model
-modFitRF <- train(classe ~ .,data=training,method="rf")
-
-modFitRF$results
-
-# create a matrix of predictions for the testing data based random forest model.
-predRF <- predict(modFitRF,newdata=testing)
-
-
+modelFitRF$finalModel
 
 ```
 
-At this point, I was very confused as to how to proceed further.  When attempting to have R construct a comparison table between the prediction and the actual values in the testing set, I was unable to 
-get a comparison to validate that my prediction model was accurate. I believe this is because of the large number of "missed" predictions because of NA values, but am not sure how to proceed.
+Using the random forest method, the best results were found with _mtry_=2 and _ntree_=500, the default.
+
+##  Prediction on Testing Data for Validation
+
+Here, I model with the testing data to evaluate the out-of-sample accuracy and error rates. RemeThe _confusionMatrix_ demonstrates the out-of-sample accuracy of 99%, with error less than 1%.
+
+```{r Model Fitting, message=FALSE,cache=TRUE}
+
+# generate predictions for the testing data based random forest model.
+predRF <- predict(modelFitRF,newdata=testing)
+
+# compare predicted vs. true values
+confusionMatrix(predRF,testing$classe)
+
+```
+## Prediction on Unknown Data
+
+The testing dataset is a subset of the known data, validating the computational model. 
+The real acid-test is to try the model data where the _classe_ variable is not known, the _rawTesting_ dataset.
+
+As the columns used for model fitting have been reduced, I will apply the same column names to the 
+_rawTesting_ dataset, except for the _classe_ column, and then apply the model to get a new set of predictions.
+
+```{r finalPredictions,message=FALSE}
+# adjust column names, matching training set -53, the classe column
+testUnknown <- rawTesting[,names(training[,-53])]
+
+# predict values for classe based on random forest model
+pred_testUnknown <- predict(modelFitRF,newdata=testUnknown)
+
+# and the results are...
+pred_testUnknown
+```
+
 
 ## Conclusion
 
 
-The process I've outlined is a first-pass at prediction, a starting point for further exploration.  Given the time constraint for the class it is simply the best I can do with limited time.
+The process I've outlined was challenging, but rewarding.  By using a fairly straightforward 
+approach, I was able to generate a very accurate model.
 
